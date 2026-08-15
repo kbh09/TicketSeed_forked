@@ -5,7 +5,7 @@ from collections import Counter
 # 1. CSV 불러오기
 # ==========================================
 
-CSV_PATH = "./data/movies.csv"
+CSV_PATH = "TicketSeed_forked\\data\\movies.csv"
 
 df = pd.read_csv(CSV_PATH)
 
@@ -92,12 +92,4 @@ def analyze_delimiter(column_name, separator="|"):
         print(f"{count:6,}회 | {value}")
 
 
-# ==========================================
-# 5. 실제 다중값 컬럼 테스트
-# ==========================================
-
-'''analyze_delimiter("배우", "|")
-analyze_delimiter("감독", "|")
-analyze_delimiter("장르", ",")
-analyze_delimiter("배급사", ",")
-analyze_delimiter("제작사", ",")'''
+analyze_column_duplicates(df)
