@@ -1,5 +1,4 @@
-import re
-import csv
+import pandas as pd
 import sys
 from pathlib import Path
 import sqlite3
@@ -11,151 +10,126 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.config import PROCESSED_DATA_DIR, DB_PATH
 
-if DB_PATH.exists():
-  DB_PATH.unlink()
-
 con = sqlite3.connect(DB_PATH)
 con.execute("PRAGMA foreign_keys = ON")
 
-# csv파일 내용 리스트 변환 함수
+TEXT_SUFFIXES = ("_code","_name","_date")
+
+PRIMARY_KEYS = {
+    "movies"                    : ["movie_code"],
+    "people"                    : ["people_code"],
+    "genres"                    : ["genre_name"],
+    "distributors"              : ["distributor_name"],
+    "production_companies"      : ["company_name"],
+    "movie_people"              : ["movie_code","people_code","role"],
+    "movie_genres"              : ["movie_code","genre_name"],
+    "movie_distributors"        : ["movie_code","distributor_name"],
+    "movie_production_companies": ["movie_code","company_name"],
+    "daily_boxoffice"           : ["movie_code","week"]}
+
+FOREIGN_KEYS = {
+    "movie_people": [
+      # (현재 테이블의 컬럼, 참조할 테이블, 참조할 컬럼)
+        ("movie_code", "movies", "movie_code"),
+        ("people_code", "people", "people_code")]
+        ,
+    "movie_genres": [
+        ("movie_code", "movies", "movie_code"),
+        ("genre_name", "genres", "genre_name")]
+        ,
+    "movie_distributors": [
+        ("movie_code", "movies", "movie_code"),
+        ("distributor_name","distributors","distributor_name")]
+        ,
+    "movie_production_companies": [
+        ("movie_code", "movies", "movie_code"),
+        ("company_name","production_companies","company_name")]
+        ,
+    "daily_boxoffice": [
+        ("movie_code", "movies", "movie_code")]}
+
+
+def infer_column_type(series):
+    column_name = series.name
+
+    if column_name.endswith(TEXT_SUFFIXES):
+        return "TEXT"
+
+    values = series.astype("string").replace("", pd.NA).dropna()
+
+    if values.empty:
+        return "TEXT"
+
+    numbers = pd.to_numeric(values,errors="coerce")
+
+    if numbers.isna().any():
+        return "TEXT"
+
+    if (numbers % 1 == 0).all():
+        return "INTEGER"
+
+    return "REAL"
+
+
 def read_csv(path):
-  with open(path, encoding="utf-8", newline="") as f:
-    reader = csv.DictReader(f)
-    assert reader.fieldnames is not None
-    return reader.fieldnames, list(reader)
+    return pd.read_csv(path,encoding="utf-8-sig",dtype=str,keep_default_na=False)
 
-# csv-레코드 정렬
-for path in sorted(PROCESSED_DATA_DIR.glob("*.csv")):
-  columns, rows = read_csv(path)
+###
 
-  # 각 csv파일의 첫번째의 모든 필드값 확인
-  for column in columns:
-    value = rows[0][column]
+df = read_csv(PROCESSED_DATA_DIR)
 
+column_types = {}
 
-# 해당 값이 정수인지 확인하는 함수
-def looks_int(text):  
-  body = text[1:] if text.startswith("-") else text
+for column in df.columns:
+    column_types[column] = infer_column_type(df[column])
 
-  if not body.isdigit():      
-    return False  
-  return not (len(body) > 1 and body.startswith("0"))
+###
 
+def build_sql(table_name,df,column_types):
+    lines = []
 
-# 소수 판별 함수
-def looks_float(text):  
-  try:
-    float(text)
-  
-  except ValueError:
-    return False
-  
-  if "." not in text:
-      return False
+    for column in df.columns:
+        column_type = column_types[column]
+        lines.append(f"{column} {column_type}")
 
-  return True
+    primary_key = PRIMARY_KEYS.get(table_name)
 
+    if primary_key:
+        lines.append(f"PRIMARY KEY ({', '.join(primary_key)})")
 
-# 날짜 판별 함수
-def looks_date(text):
-  return re.fullmatch(r"\d{4}-\d{2}-\d{2}", text) is not None
+    foreign_keys = FOREIGN_KEYS.get(table_name,[])
 
-# 타입 추론 함수 생성
-def infer_type(values):
-  seen = [v for v in values if v!=""]
+    for column, parent_table, parent_column in foreign_keys:
+        lines.append(f"FOREIGN KEY ({column}) REFERENCES {parent_table}({parent_column})")
 
-  if not seen: 
-    return "TEXT"
+    return (f"CREATE TABLE {table_name} (\n"+ ",\n".join(lines)+ "\n)")
 
-  if all(looks_int(v) for v in seen):
-    return "INTEGER"
+# Topological Sort Algorithm 
+def get_order():
+    dependencies = {}
 
-  if all(looks_float(v) for v in seen):
-    return "FLOAT"
+    for table_name in PRIMARY_KEYS:
+        dependencies[table_name] = set()
 
-  if all(looks_date(v) for v in seen):
-    return "DATE"
+        for _, parent_table, _ in FOREIGN_KEYS.get(table_name,[]):
+            dependencies[table_name].add(parent_table)
 
-  return "TEXT"
+    table_order = []
 
+    while dependencies:
+        ready_tables = [table_name for table_name, parents in dependencies.items() if not parents]
 
-# 모든 csv파일을 하나씩 검사해서 컬럼명과 각 행의 값의 타입을 분석
-for path in sorted(PROCESSED_DATA_DIR.glob("*.csv")):
-  columns, rows = read_csv(path)
+        if not ready_tables:
+            raise RuntimeError("테이블 간 참조 순서를 결정할 수 없습니다.")
 
-  for column in columns:
-    kind = infer_type([r[column]  for r in rows]) 
+        for table_name in ready_tables:
+            table_order.append(table_name)
+            del dependencies[table_name]
 
+        for parents in dependencies.values():
+            parents.difference_update(ready_tables)
 
-# PK를 찾아주는 함수
-def infer_pk(columns, rows):
-  for col in columns:
-    if not col.endswith("_id"):
-      continue
-  
-    values = [r[col] for r in rows]
-    if "" in values: 
-      continue
-   
-    if len(set(values)) == len(values):
-      return col
-  return None
-
-# 특정 PK의 주인 테이블 찾기
-def owner_of(column, tables):  
-  stem = column[:-3]
-  for candidate in (stem, stem+"s", stem+"es") :
-    if candidate in tables:
-      return candidate
-
-  return None
-
-
-# 1.모든 테이블별 필드, 데이터타입, PK 구하기
-tables = {}
-for path in sorted(PROCESSED_DATA_DIR.glob("*.csv")):
-  columns, rows = read_csv(path)
-  tables[path.stem] = {
-    "columns": columns,
-    "rows":rows,
-    "type": {col: infer_type([r[col] for r in rows]) for col in columns},
-    "pk":infer_pk(columns, rows)
-  }
-
-# 2. 특정 테이블에 연결되어 있는 외래키 찾기
-for name, table in tables.items(): 
-  fks = []
-  for col in table["columns"]:
-    if not col.endswith("_id"):
-      continue  
-    owner= owner_of(col, tables)
-  
-    if not owner or owner == name:
-      continue
-  
-    if tables[owner]["pk"] != col:
-      continue
-
-    fks.append(( col, owner))
-
-  table["fks"] = fks
-
-
-def build_create(name, table):
-  lines = []
-
-  for col in table["columns"]:
-    piece = f"   {col} {table['type'][col]}"
-  
-    if col == table["pk"]:
-      piece += " PRIMARY KEY"
-
-    lines.append(piece)
- 
-  for col, owner in table["fks"]:
-    lines.append(f"   FOREIGN KEY ({col}) REFERENCES {owner}({col})")
-
-  return f"CREATE TABLE {name} (\n"+ ",\n".join(lines) + "\n)"
+    return table_order
 
 
 # 테이블 생성 순서 지정을 위한 함수
@@ -180,38 +154,3 @@ def sort_by_dependency(tables):
       break
 
   return order
-
-table_order = sort_by_dependency(tables)
-
-# 각 필드의 데이터의 타입에 맞게 변환해주는 함수
-def convert(value, kind):
-  if value == "":
-    return None
-
-  if kind == "INTEGER":
-    return int(value)
-
-  if kind == "FLOAT":
-    return float(value)
-
-  return value
-
-# 앞에서 정산 테이블 생성 순서대로 데이터 저장
-for name in table_order:
-  table = tables[name]
-  con.execute(build_create(name, table))
-      
-  columns = table["columns"]
-
-  placeholders = ", ".join("?" for _ in columns)
-
-  values = [
-    tuple(convert(row[col], table["type"][col]) for col in columns) 
-    for row in table["rows"] 
-  ]
-
-  con.executemany(f"INSERT INTO {name} ({", ".join(columns)}) VALUES ({placeholders})", values,)
-
-  for col, _owner in table["fks"]:   
-    con.execute(f"CREATE INDEX idx_{name}_{col} on {name}({col})")
-con.commit()

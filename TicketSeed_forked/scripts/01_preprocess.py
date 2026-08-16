@@ -20,8 +20,8 @@ NUMERIC_COLUMN_TYPES = {
     "running_time": "int",
     "comment_cgv": "int",
     "comment_naver": "int",
-    "rate_naver": "float",
-}
+    "rate_cgv": "float",
+    "rate_naver": "float" }
 
 WEEKLY_COLUMNS = [
     "sales_01", "audience_01", "screen_01",
@@ -38,19 +38,6 @@ WEEKLY_COLUMNS = [
 for column in WEEKLY_COLUMNS:
     NUMERIC_COLUMN_TYPES[column] = "int"
 
-CODED_ENTITY_SPECS = {
-    "actor": {
-        "delimiter"  : "|",
-        "code_prefix": "2",
-        "code_column": "actor_code",
-        "name_column": "actor_name" }
-        ,
-    "director": {
-        "delimiter"  : "|",
-        "code_prefix": "3",
-        "code_column": "director_code",
-        "name_column": "director_name" }}
-
 NAMED_ENTITY_SPECS = {
     "genre": {
         "delimiter"     : ",",
@@ -64,13 +51,13 @@ NAMED_ENTITY_SPECS = {
         "delimiter"     : ",",
         "name_column"   : "company_name" }}
 
-#####################
-#####################
+###
 
 def load_csv(path):
     df = pd.read_csv(path,encoding="utf-8-sig",dtype=str,keep_default_na=False)
 
     return df
+
 
 def clean_column(df, columnList):
     result = df.copy()
@@ -79,6 +66,7 @@ def clean_column(df, columnList):
         result[column] = result[column].astype("string").str.strip().replace(["", "nan", "null", "none", "없음", "미상"],pd.NA)
 
     return result
+
 
 def clean_numeric_columns(df):
     result = df.copy()
@@ -89,6 +77,9 @@ def clean_numeric_columns(df):
 
         values = result[column].astype("string").str.strip().str.replace(",", "", regex=False).replace(["", "nan", "null", "none", "없음", "미상"],pd.NA)
 
+        if column == "rate_cgv":
+            values = values.str.replace("%","",regex=False)
+        
         result[column] = pd.to_numeric(values,errors="raise")
 
         if number_type == "int":
@@ -97,6 +88,7 @@ def clean_numeric_columns(df):
             result[column] = result[column].astype("Float64")
 
     return result
+
 
 def split_column(df,source_column,delimiter,name_column):
     relation = df[["movie_code", source_column]].copy()
@@ -116,6 +108,7 @@ def split_column(df,source_column,delimiter,name_column):
 
     return relation.reset_index(drop=True)
 
+
 # "NoReturn" is not iterable 에러 발생 -> return 값을 명시
 def add_role(df) -> tuple:
     actors = split_column(df,"actor","|","name")
@@ -128,21 +121,21 @@ def add_role(df) -> tuple:
 
     people = all_people[["name"]].drop_duplicates().sort_values("name").reset_index(drop=True)
 
-    people.insert(0,"person_id",range(1, len(people) + 1))
+    people.insert(0,"people_code",[f"2{number:06d}" for number in range(1, len(people) + 1)])
 
     movie_people = all_people.merge(people,on="name",how="left")
 
-    movie_people = movie_people[["movie_code", "person_id", "role"]].drop_duplicates()
+    movie_people = movie_people[["movie_code", "people_code", "role"]].drop_duplicates()
 
     return people, movie_people
+
 
 def add_code(df,source_column,delimiter,code_prefix,code_column,name_column):
     relation = split_column(df,source_column,delimiter,name_column)
 
     entity_table = relation[[name_column]].drop_duplicates().sort_values(name_column).reset_index(drop=True)
 
-    entity_table.insert(0,code_column,
-        [f"{code_prefix}{number:06d}" for number in range(1, len(entity_table) + 1)])
+    entity_table.insert(0,code_column,[f"{code_prefix}{number:06d}" for number in range(1, len(entity_table) + 1)])
 
     relation_table = relation.merge(entity_table,on=name_column,how="left",validate="many_to_one")
 
@@ -159,6 +152,7 @@ def add_name(df,source_column,delimiter,name_column):
     relation_table = relation[["movie_code", name_column]].drop_duplicates()
 
     return entity_table, relation_table
+
 
 def create_daily_dict(df):
     rows = []
@@ -181,6 +175,7 @@ def create_daily_dict(df):
                     "screens": screens })
 
     return pd.DataFrame(rows,columns=["movie_code","week","sales","audience","screens"])
+
 
 def preprocess(path: Path):
     df = load_csv(path)
@@ -220,14 +215,14 @@ def preprocess(path: Path):
         "movie_distributors"        : movie_distributors,
         "daily_boxoffice"           : daily_boxoffice }
 
+
 def save_tables(tables, output_dir):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for table_name, table_df in tables.items():
         table_df.to_csv(output_dir / f"{table_name}.csv",index=False,encoding="utf-8-sig")
 
-#####################
-#####################
+###
 
 if __name__ == "__main__":
     tables = preprocess(RAW_DATA_PATH)
