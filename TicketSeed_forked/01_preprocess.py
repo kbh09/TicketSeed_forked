@@ -107,19 +107,8 @@ def add_code(df,source_column,delimiter,code_prefix,code_column,name_column):
     return entity_table, relation_table
 
 
-def make_named_entity_and_relation(
-    df: pd.DataFrame,
-    source_column: str,
-    delimiter: str,
-    name_column: str,
-):
-
-    relation = split_multi_value_column(
-        df=df,
-        source_column=source_column,
-        delimiter=delimiter,
-        name_column=name_column,
-    )
+def add_name(df,source_column,delimiter,name_column):
+    relation = split_column(df,source_column,delimiter,name_column)
 
     entity_table = (
         relation[[name_column]]
@@ -161,20 +150,20 @@ def preprocess(path: Path):
         **CODED_ENTITY_SPECS["director"],
     )
 
-    genres, movie_genres = make_named_entity_and_relation(
+    genres, movie_genres = add_name(
         df=df,
         source_column="genre",
         **NAMED_ENTITY_SPECS["genre"],
     )
 
-    distributors, movie_distributors = make_named_entity_and_relation(
+    distributors, movie_distributors = add_name(
         df=df,
         source_column="distributor",
         **NAMED_ENTITY_SPECS["distributor"],
     )
 
     production_companies, movie_production_companies = (
-        make_named_entity_and_relation(
+        add_name(
             df=df,
             source_column="production_company",
             **NAMED_ENTITY_SPECS["production_company"],
