@@ -13,15 +13,15 @@ MULTI_VALUE_COLUMNS = [
     "distributor" ]
 
 NUMERIC_COLUMN_TYPES = {
-    "screen_national": "int",
-    "sales_national": "int",
-    "audience_national": "int",
-    "production_year": "int",
-    "running_time": "int",
-    "comment_cgv": "int",
-    "comment_naver": "int",
-    "rate_cgv": "float",
-    "rate_naver": "float" }
+    "screen_national"   : "int",
+    "sales_national"    : "int",
+    "audience_national" : "int",
+    "production_year"   : "int",
+    "running_time"      : "int",
+    "comment_cgv"       : "int",
+    "comment_naver"     : "int",
+    "rate_cgv"          : "float",
+    "rate_naver"        : "float" }
 
 WEEKLY_COLUMNS = [
     "sales_01", "audience_01", "screen_01",
@@ -111,19 +111,19 @@ def split_column(df,source_column,delimiter,name_column):
 
 # "NoReturn" is not iterable 에러 발생 -> return 값을 명시
 def add_role(df) -> tuple:
-    actors = split_column(df,"actor","|","name")
+    actors = split_column(df,"actor","|","people_name")
     actors["role"] = "actor"
 
-    directors = split_column(df,"director","|","name")
+    directors = split_column(df,"director","|","people_name")
     directors["role"] = "director"
 
     all_people = pd.concat([actors, directors],ignore_index=True)
 
-    people = all_people[["name"]].drop_duplicates().sort_values("name").reset_index(drop=True)
+    people = all_people[["people_name"]].drop_duplicates().sort_values("people_name").reset_index(drop=True)
 
     people.insert(0,"people_code",[f"2{number:06d}" for number in range(1, len(people) + 1)])
 
-    movie_people = all_people.merge(people,on="name",how="left")
+    movie_people = all_people.merge(people,on="people_name",how="left")
 
     movie_people = movie_people[["movie_code", "people_code", "role"]].drop_duplicates()
 
@@ -193,7 +193,7 @@ def preprocess(path: Path):
 
     movies = df.drop(columns=[*MULTI_VALUE_COLUMNS,*WEEKLY_COLUMNS],errors="ignore")
 
-    people, movie_people = add_role(df)
+    people, movie_people                             = add_role(df)
 
     genres, movie_genres                             = add_name(df,"genre",**NAMED_ENTITY_SPECS["genre"])
 
@@ -201,7 +201,7 @@ def preprocess(path: Path):
 
     production_companies, movie_production_companies = add_name(df,"production_company",**NAMED_ENTITY_SPECS["production_company"])
 
-    daily_boxoffice = create_daily_dict(df)
+    daily_boxoffice                                  = create_daily_dict(df)
 
     return {
         "movies"                    : movies,
