@@ -17,11 +17,26 @@ NUMERIC_COLUMN_TYPES = {
     "sales_national": "int",
     "audience_national": "int",
     "production_year": "int",
-    "release_date": "string",
     "running_time": "int",
     "comment_cgv": "int",
     "comment_naver": "int",
-    "rate_naver": "float" }
+    "rate_naver": "float",
+}
+
+WEEKLY_COLUMNS = [
+    "sales_01", "audience_01", "screen_01",
+    "sales_02", "audience_02", "screen_02",
+    "sales_03", "audience_03", "screen_03",
+    "sales_04", "audience_04", "screen_04",
+    "sales_05", "audience_05", "screen_05",
+    "sales_06", "audience_06", "screen_06",
+    "sales_07", "audience_07", "screen_07",
+    "sales_08", "audience_08", "screen_08",
+    "sales_09", "audience_09", "screen_09",
+    "sales_10", "audience_10", "screen_10" ]
+
+for column in WEEKLY_COLUMNS:
+    NUMERIC_COLUMN_TYPES[column] = "int"
 
 CODED_ENTITY_SPECS = {
     "actor": {
@@ -72,21 +87,9 @@ def clean_numeric_columns(df):
         if column not in result.columns:
             continue
 
-        values = (
-            result[column]
-            .astype("string")
-            .str.strip()
-            .str.replace(",", "", regex=False)
-            .replace(
-                ["", "nan", "null", "none", "없음", "미상"],
-                pd.NA,
-            )
-        )
+        values = result[column].astype("string").str.strip().str.replace(",", "", regex=False).replace(["", "nan", "null", "none", "없음", "미상"],pd.NA)
 
-        result[column] = pd.to_numeric(
-            values,
-            errors="raise",
-        )
+        result[column] = pd.to_numeric(values,errors="raise")
 
         if number_type == "int":
             result[column] = result[column].astype("Int64")
@@ -113,6 +116,24 @@ def split_column(df,source_column,delimiter,name_column):
 
     return relation.reset_index(drop=True)
 
+def add_role(df):
+    actors = split_column(df,"actor","|","name")
+    actors["role"] = "actor"
+
+    directors = split_column(df,"director","|","name")
+    directors["role"] = "director"
+
+    all_people = pd.concat([actors, directors],ignore_index=True)
+
+    people = all_people[["name"]].drop_duplicates().sort_values("name").reset_index(drop=True)
+
+    people.insert(0,"person_id",range(1, len(people) + 1))
+
+    movie_people = all_people.merge(people,on="name",how="left")
+
+    movie_people = movie_people[["movie_code", "person_id", "role"]].drop_duplicates()
+
+    return people, movie_people
 
 def add_code(df,source_column,delimiter,code_prefix,code_column,name_column):
     relation = split_column(df,source_column,delimiter,name_column)
@@ -138,6 +159,28 @@ def add_name(df,source_column,delimiter,name_column):
 
     return entity_table, relation_table
 
+def create_daily_dict(df):
+    rows = []
+
+    for week in range(1, 11):
+        sales_column    = f"sales_{week:02d}"
+        audience_column = f"audience_{week:02d}"
+        screen_column   = f"screen_{week:02d}"
+
+        for _, row in df.iterrows():
+            sales    = row[sales_column]
+            audience = row[audience_column]
+            screens  = row[screen_column]
+
+            rows.append({
+                    "movie_code": row["movie_code"],
+                    "week": week,
+                    "sales": sales,
+                    "audience": audience,
+                    "screens": screens })
+
+    return pd.DataFrame(rows,columns=["movie_code","week","sales","audience","screens"])
+
 def preprocess(path: Path):
     df = load_csv(path)
 
@@ -152,30 +195,29 @@ def preprocess(path: Path):
     df = clean_column(df, multi_columns)
     df = clean_numeric_columns(df)
 
-    movies = df.drop(columns=MULTI_VALUE_COLUMNS,errors="ignore")
+    movies = df.drop(columns=[*MULTI_VALUE_COLUMNS,*WEEKLY_COLUMNS],errors="ignore")
 
-    actors, movie_actors             = add_code(df,"actor",**CODED_ENTITY_SPECS["actor"])
+    people, movie_people = add_role(df)
 
-    directors, movie_directors       = add_code(df,"director",**CODED_ENTITY_SPECS["director"])
+    genres, movie_genres                             = add_name(df,"genre",**NAMED_ENTITY_SPECS["genre"])
 
-    genres, movie_genres             = add_name(df,"genre",**NAMED_ENTITY_SPECS["genre"])
-
-    distributors, movie_distributors = add_name(df,"distributor",**NAMED_ENTITY_SPECS["distributor"])
+    distributors, movie_distributors                 = add_name(df,"distributor",**NAMED_ENTITY_SPECS["distributor"])
 
     production_companies, movie_production_companies = add_name(df,"production_company",**NAMED_ENTITY_SPECS["production_company"])
 
+    daily_boxoffice = create_daily_dict(df)
+
     return {
-        "movies"         : movies,
-        "actors"         : actors,
-        "movie_actors"   : movie_actors,
-        "directors"      : directors,
-        "movie_directors": movie_directors,
-        "genres"         : genres,
-        "movie_genres"   : movie_genres,
+        "movies"                    : movies,
+        "people"                    : people,
+        "movie_people"              : movie_people,
+        "genres"                    : genres,
+        "movie_genres"              : movie_genres,
         "production_companies"      : production_companies,
         "movie_production_companies": movie_production_companies,
         "distributors"              : distributors,
-        "movie_distributors"        : movie_distributors }
+        "movie_distributors"        : movie_distributors,
+        "daily_boxoffice"           : daily_boxoffice }
 
 def save_tables(tables, output_dir):
     output_dir.mkdir(parents=True, exist_ok=True)
