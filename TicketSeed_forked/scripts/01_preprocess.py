@@ -116,7 +116,8 @@ def split_column(df,source_column,delimiter,name_column):
 
     return relation.reset_index(drop=True)
 
-def add_role(df):
+# "NoReturn" is not iterable 에러 발생 -> return 값을 명시
+def add_role(df) -> tuple:
     actors = split_column(df,"actor","|","name")
     actors["role"] = "actor"
 
