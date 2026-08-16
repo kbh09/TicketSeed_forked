@@ -1,13 +1,16 @@
 import pandas as pd
 from collections import Counter
 
+import sys
+from pathlib import Path
+from app.config import RAW_DATA_PATH
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 # ==========================================
 # 1. CSV 불러오기
 # ==========================================
 
-CSV_PATH = "TicketSeed_forked\\data\\movies.csv"
-
-df = pd.read_csv(CSV_PATH)
+df = pd.read_csv(RAW_DATA_PATH, encoding="utf-8-sig", dtype={"movie_code": "string"})
 
 print(f"행 개수: {len(df):,}")
 print(f"컬럼 개수: {len(df.columns):,}")
