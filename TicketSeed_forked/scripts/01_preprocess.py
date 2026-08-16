@@ -10,8 +10,18 @@ MULTI_VALUE_COLUMNS = [
     "director",
     "genre",
     "production_company",
-    "distributor",
-]
+    "distributor" ]
+
+NUMERIC_COLUMN_TYPES = {
+    "screen_national": "int",
+    "sales_national": "int",
+    "audience_national": "int",
+    "production_year": "int",
+    "release_date": "string",
+    "running_time": "int",
+    "comment_cgv": "int",
+    "comment_naver": "int",
+    "rate_naver": "float" }
 
 CODED_ENTITY_SPECS = {
     "actor": {
@@ -43,7 +53,7 @@ NAMED_ENTITY_SPECS = {
 #####################
 
 def load_csv(path):
-    df = pd.read_csv(path,encoding="utf-8-sig",dtype={"movie_code": "string"},keep_default_na=False)
+    df = pd.read_csv(path,encoding="utf-8-sig",dtype=str,keep_default_na=False)
 
     return df
 
@@ -52,6 +62,36 @@ def clean_column(df, columnList):
 
     for column in columnList:
         result[column] = result[column].astype("string").str.strip().replace(["", "nan", "null", "none", "없음", "미상"],pd.NA)
+
+    return result
+
+def clean_numeric_columns(df):
+    result = df.copy()
+
+    for column, number_type in NUMERIC_COLUMN_TYPES.items():
+        if column not in result.columns:
+            continue
+
+        values = (
+            result[column]
+            .astype("string")
+            .str.strip()
+            .str.replace(",", "", regex=False)
+            .replace(
+                ["", "nan", "null", "none", "없음", "미상"],
+                pd.NA,
+            )
+        )
+
+        result[column] = pd.to_numeric(
+            values,
+            errors="raise",
+        )
+
+        if number_type == "int":
+            result[column] = result[column].astype("Int64")
+        else:
+            result[column] = result[column].astype("Float64")
 
     return result
 
@@ -98,7 +138,6 @@ def add_name(df,source_column,delimiter,name_column):
 
     return entity_table, relation_table
 
-# 다중값 외에도 단일값 컬럼도 전처리하는 함수를 추가.
 def preprocess(path: Path):
     df = load_csv(path)
 
@@ -111,6 +150,7 @@ def preprocess(path: Path):
         "distributor" ]
 
     df = clean_column(df, multi_columns)
+    df = clean_numeric_columns(df)
 
     movies = df.drop(columns=MULTI_VALUE_COLUMNS,errors="ignore")
 
