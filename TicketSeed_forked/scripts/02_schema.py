@@ -6,19 +6,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.config import PROCESSED_DATA_DIR, DB_PATH
 
-
-TABLE_NAMES = [
-    "movies",
-    "people",
-    "movie_people",
-    "genres",
-    "movie_genres",
-    "distributors",
-    "movie_distributors",
-    "production_companies",
-    "movie_production_companies",
-    "daily_boxoffice" ]
-
+# PK, FK 추론을 위한 칼럼 꼬리말 명시
 TEXT_SUFFIXES = ("_code", "_name", "_date")
 
 # 자동 추론하지 않는 복합 PK만 별도 지정
@@ -85,8 +73,11 @@ def infer_type(column, values):
 def load_tables():
     tables = {}
 
-    for table_name in TABLE_NAMES:
-        columns, rows = read_csv(PROCESSED_DATA_DIR / f"{table_name}.csv")
+    table_files = sorted(PROCESSED_DATA_DIR.glob("*.csv"))
+
+    for table_file in table_files:
+        table_name = table_file.stem
+        columns, rows = read_csv(table_file)
 
         tables[table_name] = {
             "columns": columns,
@@ -138,7 +129,7 @@ def infer_primary_keys(tables):
 def infer_foreign_keys(tables, primary_keys):
     for table_name in tables:
         if table_name not in primary_keys:
-            raise ValueError(f"{table_name}의 PK 추론에 실패했습니다.")
+            raise ValueError(f"{table_name}에 PK가 없습니다.")
 
     parent_columns = {columns[0]: table_name for table_name, columns in primary_keys.items() if len(columns) == 1}
 
@@ -211,6 +202,7 @@ def convert_value(value, column_type):
 # 데이터베이스 생성
 def create_database(tables,primary_keys,foreign_keys,table_order):
     if DB_PATH.exists():
+        print(f'{DB_PATH.name} deleted.')
         DB_PATH.unlink()
 
     DB_PATH.parent.mkdir(parents=True,exist_ok=True)
@@ -242,6 +234,8 @@ def create_database(tables,primary_keys,foreign_keys,table_order):
 
     connection.commit()
     connection.close()
+
+    return print(f'{DB_PATH.name} created at {DB_PATH.parent}.')
 
 
 def main():

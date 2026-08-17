@@ -5,6 +5,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.config import RAW_DATA_PATH, PROCESSED_DATA_DIR
 
+# 다중값 컬럼 지정
 MULTI_VALUE_COLUMNS = [
     "actor",
     "director",
@@ -12,6 +13,7 @@ MULTI_VALUE_COLUMNS = [
     "production_company",
     "distributor" ]
 
+# 숫자형 컬럼 지정
 NUMERIC_COLUMN_TYPES = {
     "screen_national"   : "int",
     "sales_national"    : "int",
@@ -23,6 +25,7 @@ NUMERIC_COLUMN_TYPES = {
     "rate_cgv"          : "float",
     "rate_naver"        : "float" }
 
+# 일일 박스오피스 칼럼 지정
 WEEKLY_COLUMNS = [
     "sales_01", "audience_01", "screen_01",
     "sales_02", "audience_02", "screen_02",
@@ -38,7 +41,12 @@ WEEKLY_COLUMNS = [
 for column in WEEKLY_COLUMNS:
     NUMERIC_COLUMN_TYPES[column] = "int"
 
+# 구분자, 분리할 칼럼 이름 지정
 NAMED_ENTITY_SPECS = {
+    "people": {
+        "delimiter"     : "|",
+        "name_column"   : "people_name" }
+        ,
     "genre": {
         "delimiter"     : ",",
         "name_column"   : "genre_name" }
@@ -111,11 +119,11 @@ def split_column(df,source_column,delimiter,name_column):
 
 
 # "NoReturn" is not iterable 에러 발생 -> return 값을 명시
-def add_role(df) -> tuple:
-    actors = split_column(df,"actor","|","people_name")
+def add_role(df,delimiter,name_column) -> tuple:
+    actors = split_column(df,"actor",delimiter,name_column)
     actors["role"] = "actor"
 
-    directors = split_column(df,"director","|","people_name")
+    directors = split_column(df,"director",delimiter,name_column)
     directors["role"] = "director"
 
     all_people = pd.concat([actors, directors],ignore_index=True)
@@ -129,20 +137,6 @@ def add_role(df) -> tuple:
     movie_people = movie_people[["movie_code", "people_code", "role"]].drop_duplicates()
 
     return people, movie_people
-
-
-def add_code(df,source_column,delimiter,code_prefix,code_column,name_column):
-    relation = split_column(df,source_column,delimiter,name_column)
-
-    entity_table = relation[[name_column]].drop_duplicates().sort_values(name_column).reset_index(drop=True)
-
-    entity_table.insert(0,code_column,[f"{code_prefix}{number:06d}" for number in range(1, len(entity_table) + 1)])
-
-    relation_table = relation.merge(entity_table,on=name_column,how="left",validate="many_to_one")
-
-    relation_table = relation_table[["movie_code", code_column]].drop_duplicates()
-
-    return entity_table, relation_table
 
 
 def add_name(df,source_column,delimiter,name_column):
@@ -178,7 +172,7 @@ def create_daily_dict(df):
     return pd.DataFrame(rows,columns=["movie_code","week","sales","audience","screens"])
 
 
-def preprocess(path: Path):
+def preprocess(path):
     df = load_csv(path)
 
     multi_columns = [
@@ -193,7 +187,7 @@ def preprocess(path: Path):
 
     movies = df.drop(columns=[*MULTI_VALUE_COLUMNS,*WEEKLY_COLUMNS],errors="ignore")
 
-    people, movie_people                             = add_role(df)
+    people, movie_people                             = add_role(df,**NAMED_ENTITY_SPECS["people"])
 
     genres, movie_genres                             = add_name(df,"genre",**NAMED_ENTITY_SPECS["genre"])
 
