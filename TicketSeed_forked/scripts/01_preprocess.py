@@ -57,29 +57,31 @@ def load_csv(path):
 
     return df
 
+def normalize_values(series, remove_comma=False, remove_percent=False):
+    values = series.astype("string").str.strip().replace(["","nan","null","none","없음","미상"], pd.NA)
 
-def clean_column(df, columnList):
+    if remove_comma:
+        values = values.str.replace(",", "", regex=False)
+
+    if remove_percent:
+        values = values.str.replace("%", "", regex=False)
+
+    return values
+
+
+def clean_data(df, column_list):
     result = df.copy()
 
-    for column in columnList:
-        result[column] = result[column].astype("string").str.strip().replace(["", "nan", "null", "none", "없음", "미상"],pd.NA)
-
-    return result
-
-
-def clean_numeric_columns(df):
-    result = df.copy()
+    for column in column_list:
+        result[column] = normalize_values(result[column])
 
     for column, number_type in NUMERIC_COLUMN_TYPES.items():
         if column not in result.columns:
             continue
 
-        values = result[column].astype("string").str.strip().str.replace(",", "", regex=False).replace(["", "nan", "null", "none", "없음", "미상"],pd.NA)
+        values = normalize_values(result[column],remove_comma=True,remove_percent=(column == "rate_cgv"))
 
-        if column == "rate_cgv":
-            values = values.str.replace("%","",regex=False)
-        
-        result[column] = pd.to_numeric(values,errors="raise")
+        result[column] = pd.to_numeric(values, errors="raise")
 
         if number_type == "int":
             result[column] = result[column].astype("Int64")
@@ -87,9 +89,6 @@ def clean_numeric_columns(df):
             result[column] = result[column].astype("Float64")
 
     return result
-
-
-
 
 
 def split_column(df,source_column,delimiter,name_column):
@@ -189,9 +188,8 @@ def preprocess(path: Path):
         "genre",
         "production_company",
         "distributor" ]
-
-    df = clean_column(df, multi_columns)
-    df = clean_numeric_columns(df)
+    
+    clean_data(df, multi_columns)
 
     movies = df.drop(columns=[*MULTI_VALUE_COLUMNS,*WEEKLY_COLUMNS],errors="ignore")
 
