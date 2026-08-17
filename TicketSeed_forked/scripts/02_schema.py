@@ -2,6 +2,8 @@ import csv
 import sqlite3
 from pathlib import Path
 
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.config import PROCESSED_DATA_DIR, DB_PATH
 
 
@@ -22,9 +24,9 @@ TEXT_SUFFIXES = ("_code", "_name", "_date")
 # 자동 추론하지 않는 복합 PK만 별도 지정
 COMPOSITE_KEYS = {
     "movie_people"              : ["movie_code", "people_code", "role"],
-    "movie_genres"              : ["movie_code", "genre_code"],
-    "movie_distributors"        : ["movie_code", "distributor_code"],
-    "movie_production_companies": ["movie_code","company_code"],
+    "movie_genres"              : ["movie_code", "genre_name"],
+    "movie_distributors"        : ["movie_code", "distributor_name"],
+    "movie_production_companies": ["movie_code","company_name"],
     "daily_boxoffice"           : ["movie_code", "week"] }
 
 
@@ -32,7 +34,7 @@ def read_csv(path):
     with open(path, encoding="utf-8-sig", newline="") as file:
         reader = csv.DictReader(file)
 
-        # load_tables() 에러 예방: columns가 None인 경우 ValueError 발생
+        # load_tables()에서 에러 예방: columns가 None인 경우 ValueError 발생
         if reader.fieldnames is None:
             raise ValueError(f"CSV 파일에 컬럼명이 없습니다: {path}")
 
@@ -145,6 +147,7 @@ def infer_foreign_keys(tables, primary_keys):
 
     return foreign_keys
 
+
 def build_create_sql(table_name,table,primary_keys,foreign_keys):
     lines = []
 
@@ -156,7 +159,7 @@ def build_create_sql(table_name,table,primary_keys,foreign_keys):
     for column, parent_table in foreign_keys[table_name]:
         lines.append(f"FOREIGN KEY ({column}) REFERENCES {parent_table}({column})")
 
-    return (f"""CREATE TABLE {table_name} ({",\n".join(lines)})""")
+    return (f"CREATE TABLE {table_name} ({",\n".join(lines)})")
 
 
 def get_table_order(tables, foreign_keys):
@@ -174,6 +177,7 @@ def get_table_order(tables, foreign_keys):
         pending.difference_update(ready)
 
     return order
+
 
 def convert_value(value, column_type):
     if value == "":
@@ -227,17 +231,15 @@ def create_database(tables,primary_keys,foreign_keys,table_order):
     connection.commit()
     connection.close()
 
+
 def main():
     tables = load_tables()
 
     primary_keys = infer_primary_keys(tables)
 
-    foreign_keys = infer_foreign_keys(
-        tables,
-        primary_keys,
-    )
+    foreign_keys = infer_foreign_keys(tables,primary_keys)
 
-    table_order = get_table_order(tables,foreign_keys)
+    table_order  = get_table_order(tables,foreign_keys)
 
     create_database(tables,primary_keys,foreign_keys,table_order)
 
