@@ -41,15 +41,25 @@ def read_csv(path):
         return reader.fieldnames, list(reader)
 
 
+# PK 검증(중복, NULL 여부)
 def valid_key(rows, columns):
     if not rows:
         return False
 
-    keys = [tuple(row[column] for column in columns) for row in rows]
+    keys = []
 
-    return (all(all(value != "" for value in key) for key in keys) and len(keys) == len(set(keys)))
+    for row in rows:
+        key = tuple(row[column] for column in columns)
+
+        if any(value == "" for value in key):
+            return False
+
+        keys.append(key)
+
+    return len(keys) == len(set(keys))
 
 
+#칼럼 타입 확인
 def infer_type(column, values):
     if column.endswith(TEXT_SUFFIXES):
         return "TEXT"
@@ -71,6 +81,7 @@ def infer_type(column, values):
         return "TEXT"
 
 
+# 각 테이블 값(칼럼, 행, 타입) 불러오기
 def load_tables():
     tables = {}
 
@@ -85,6 +96,7 @@ def load_tables():
     return tables
 
 
+# PK 찾기
 def infer_primary_keys(tables):
     primary_keys = {}
 
@@ -122,6 +134,7 @@ def infer_primary_keys(tables):
     return primary_keys
 
 
+# FK 찾기
 def infer_foreign_keys(tables, primary_keys):
     for table_name in tables:
         if table_name not in primary_keys:
@@ -148,6 +161,7 @@ def infer_foreign_keys(tables, primary_keys):
     return foreign_keys
 
 
+# SQL 구문 작성
 def build_create_sql(table_name,table,primary_keys,foreign_keys):
     lines = []
 
@@ -162,6 +176,7 @@ def build_create_sql(table_name,table,primary_keys,foreign_keys):
     return (f"CREATE TABLE {table_name} ({",\n".join(lines)})")
 
 
+# PK, FK 관계에 따라 생성 순서 부여
 def get_table_order(tables, foreign_keys):
     pending = set(tables)
     order = []
@@ -179,6 +194,7 @@ def get_table_order(tables, foreign_keys):
     return order
 
 
+# 숫자는 타입 변환
 def convert_value(value, column_type):
     if value == "":
         return None
@@ -192,6 +208,7 @@ def convert_value(value, column_type):
     return value
 
 
+# 데이터베이스 생성
 def create_database(tables,primary_keys,foreign_keys,table_order):
     if DB_PATH.exists():
         DB_PATH.unlink()
@@ -215,12 +232,7 @@ def create_database(tables,primary_keys,foreign_keys,table_order):
             value = []
 
             for column in columns:
-                value.append(
-                    convert_value(
-                        row[column],
-                        table["types"][column],
-                    )
-                )
+                value.append(convert_value(row[column],table["types"][column]))
 
             values.append(tuple(value))
 

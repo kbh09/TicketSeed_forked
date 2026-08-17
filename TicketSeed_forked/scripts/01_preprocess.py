@@ -51,7 +51,6 @@ NAMED_ENTITY_SPECS = {
         "delimiter"     : ",",
         "name_column"   : "company_name" }}
 
-###
 
 def load_csv(path):
     df = pd.read_csv(path,encoding="utf-8-sig",dtype=str,keep_default_na=False)
@@ -88,6 +87,9 @@ def clean_numeric_columns(df):
             result[column] = result[column].astype("Float64")
 
     return result
+
+
+
 
 
 def split_column(df,source_column,delimiter,name_column):
@@ -222,7 +224,6 @@ def save_tables(tables, output_dir):
     for table_name, table_df in tables.items():
         table_df.to_csv(output_dir / f"{table_name}.csv",index=False,encoding="utf-8-sig")
 
-###
 
 if __name__ == "__main__":
     tables = preprocess(RAW_DATA_PATH)
